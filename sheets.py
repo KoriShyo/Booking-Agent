@@ -1,4 +1,5 @@
 import gspread
+import json
 from datetime import datetime, timedelta
 import os
 from dotenv import load_dotenv
@@ -23,7 +24,11 @@ _sheet = None
 def get_sheet():
     global _sheet
     if _sheet is None:
-        client = gspread.service_account(filename="credentials.json")
+        google_creds = os.getenv("GOOGLE_CREDENTIALS")
+        if google_creds:
+            client = gspread.service_account_from_dict(json.loads(google_creds))
+        else:
+            client = gspread.service_account(filename="credentials.json")
         _sheet = client.open_by_key(SHEET_ID).sheet1
     return _sheet
 
