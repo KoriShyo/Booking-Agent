@@ -8,7 +8,7 @@ from telegram.ext import (
     Application, MessageHandler, CommandHandler, CallbackQueryHandler,
     filters, ContextTypes, ConversationHandler, PicklePersistence,
 )
-from sheets import add_booking, find_booking_by_phone, find_any_booking_by_phone, update_booking_schedule, save_event_id, cancel_booking_by_row, get_bookings_by_date, get_tomorrows_bookings
+from sheets import add_booking, find_booking_by_phone, find_any_booking_by_phone, update_booking_schedule, save_event_id, cancel_booking_by_row, get_bookings_by_date, get_tomorrows_bookings, get_daily_report
 from calendar_sync import create_calendar_event, update_calendar_event, delete_calendar_event, parse_time
 from apscheduler.schedulers.background import BackgroundScheduler
 from datetime import datetime
@@ -85,6 +85,7 @@ TEXTS = {
         ),
         "branch_not_found": "Branch not found.",
         "already_cancelled": "❌ This appointment is already cancelled. Please use 📅 Book Appointment to make a new booking.",
+        "owner_blocked": "⛔ Owner accounts cannot make bookings. You receive patient notifications automatically.",
     },
     "kh": {
         "welcome": "អស្ចារ្យណាស់! តើឈ្មោះពេញរបស់អ្នកជាអ្វី?",
@@ -140,6 +141,7 @@ TEXTS = {
         ),
         "branch_not_found": "រកមិនឃើញសាខា។",
         "already_cancelled": "❌ ការណាត់ជួបនេះត្រូវបានលប់ចោលរួចហើយ។ សូមប្រើ 📅 ធ្វើការកក់ ដើម្បីណាត់ជួបថ្មី។",
+        "owner_blocked": "⛔ គណនីម្ចាស់មិនអាចធ្វើការកក់បានទេ។ អ្នកទទួលការជូនដំណឹងពីអ្នកជំងឺដោយស្វ័យប្រវត្តិ។",
     },
 }
 
@@ -160,6 +162,7 @@ MAIN_MENU = ReplyKeyboardMarkup(
     [
         ["📅 Book Appointment", "📍 Location"],
         ["🔄 Change Schedule", "❌ Cancel Appointment"],
+        ["📊 Daily Report"],
     ],
     resize_keyboard=True,
 )
@@ -168,6 +171,10 @@ MAIN_MENU = ReplyKeyboardMarkup(
 def t(context, key):
     lang = context.user_data.get("lang", "en")
     return TEXTS[lang][key]
+
+
+def _is_owner(update: Update) -> bool:
+    return str(update.effective_chat.id) == str(OWNER_CHAT_ID)
 
 
 # ── /start ────────────────────────────────────────────────────────────────────
@@ -186,6 +193,10 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ── Booking conversation ──────────────────────────────────────────────────────
 
 async def book_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if _is_owner(update):
+        lang = context.user_data.get("lang", "en")
+        await update.message.reply_text(TEXTS[lang]["owner_blocked"], reply_markup=MAIN_MENU)
+        return ConversationHandler.END
     context.user_data.clear()
     await update.message.reply_text(
         "Please choose your language / សូមជ្រើសរើសភាសា:",
@@ -348,6 +359,10 @@ async def exit_conv(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ── Location conversation ─────────────────────────────────────────────────────
 
 async def location_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if _is_owner(update):
+        lang = context.user_data.get("lang", "en")
+        await update.message.reply_text(TEXTS[lang]["owner_blocked"], reply_markup=MAIN_MENU)
+        return ConversationHandler.END
     lang = context.user_data.get("lang", "en")
     keyboard = InlineKeyboardMarkup([
         [InlineKeyboardButton(name, callback_data=f"branch:{name}")]
@@ -377,6 +392,10 @@ async def send_store_location(update: Update, context: ContextTypes.DEFAULT_TYPE
 # ── Change schedule conversation ──────────────────────────────────────────────
 
 async def change_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if _is_owner(update):
+        lang = context.user_data.get("lang", "en")
+        await update.message.reply_text(TEXTS[lang]["owner_blocked"], reply_markup=MAIN_MENU)
+        return ConversationHandler.END
     lang = context.user_data.get("lang", "en")
     await update.message.reply_text(TEXTS[lang]["ask_phone_lookup"], reply_markup=ReplyKeyboardRemove())
     return CHANGE_PHONE
@@ -481,6 +500,10 @@ async def change_new_time(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ── Cancel appointment conversation ───────────────────────────────────────────
 
 async def cancel_appt_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if _is_owner(update):
+        lang = context.user_data.get("lang", "en")
+        await update.message.reply_text(TEXTS[lang]["owner_blocked"], reply_markup=MAIN_MENU)
+        return ConversationHandler.END
     lang = context.user_data.get("lang", "en")
     await update.message.reply_text(TEXTS[lang]["ask_phone_lookup"], reply_markup=ReplyKeyboardRemove())
     return CANCEL_PHONE
@@ -555,6 +578,27 @@ async def cancel_appt_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE
         await query.message.reply_text(t(context, "cancel_aborted"), reply_markup=MAIN_MENU)
 
     return ConversationHandler.END
+
+
+# ── Daily report ─────────────────────────────────────────────────────────────
+
+async def report_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not _is_owner(update):
+        return
+    today = datetime.now().strftime("%d/%m/%Y")
+    report = get_daily_report(today)
+    if not report:
+        await update.message.reply_text("❌ Could not load report.", reply_markup=MAIN_MENU)
+        return
+    await update.message.reply_text(
+        f"📊 <b>Daily Report — {report['date']}</b>\n\n"
+        f"📋 Total Bookings: <b>{report['total']}</b>\n"
+        f"⏳ Not Yet (upcoming): <b>{report['not_yet']}</b>\n"
+        f"✅ Completed: <b>{report['completed']}</b>\n"
+        f"❌ Cancelled: <b>{report['cancelled']}</b>",
+        parse_mode="HTML",
+        reply_markup=MAIN_MENU,
+    )
 
 
 # ── Reminder scheduler ────────────────────────────────────────────────────────
@@ -654,6 +698,7 @@ def main():
     app.add_handler(location_conv)
     app.add_handler(change_conv)
     app.add_handler(cancel_conv)
+    app.add_handler(MessageHandler(filters.Regex("^📊 Daily Report$"), report_handler))
 
     scheduler = BackgroundScheduler()
     scheduler.add_job(send_reminders_sync, "cron", hour=8, minute=0, args=[TELEGRAM_BOT_TOKEN])

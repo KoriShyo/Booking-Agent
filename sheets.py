@@ -124,3 +124,33 @@ def get_tomorrows_bookings():
         r for r in records
         if r.get("Date") == tomorrow and r.get("Status") == "Confirmed"
     ]
+
+
+def get_daily_report(date_str):
+    """Return booking stats for a given date (DD/MM/YYYY)."""
+    sheet = get_sheet()
+    all_rows = sheet.get_all_values()
+    try:
+        report_day = datetime.strptime(date_str, "%d/%m/%Y").date()
+        today = datetime.now().date()
+    except ValueError:
+        return None
+    total = confirmed = cancelled = 0
+    for row in all_rows[1:]:
+        if len(row) < 7 or row[COL_DATE - 1] != date_str:
+            continue
+        total += 1
+        status = row[COL_STATUS - 1]
+        if status == "Confirmed":
+            confirmed += 1
+        elif status == "Cancelled":
+            cancelled += 1
+    completed = confirmed if report_day < today else 0
+    not_yet = confirmed if report_day >= today else 0
+    return {
+        "date": date_str,
+        "total": total,
+        "cancelled": cancelled,
+        "completed": completed,
+        "not_yet": not_yet,
+    }
