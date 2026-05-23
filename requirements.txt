@@ -3,3 +3,5 @@ gspread>=6.0
 python-dotenv>=1.0
 APScheduler>=3.10
 google-genai>=0.5
+google-api-python-client>=2.0
+google-auth>=2.0

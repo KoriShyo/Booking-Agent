@@ -7,7 +7,8 @@ from telegram.ext import (
     Application, MessageHandler, CommandHandler, filters,
     ContextTypes, ConversationHandler, PicklePersistence,
 )
-from sheets import add_booking, find_booking_by_phone, find_any_booking_by_phone, update_booking_schedule, cancel_booking_by_row, get_tomorrows_bookings
+from sheets import add_booking, find_booking_by_phone, find_any_booking_by_phone, update_booking_schedule, save_event_id, cancel_booking_by_row, get_tomorrows_bookings
+from calendar_sync import create_calendar_event, update_calendar_event, delete_calendar_event
 from apscheduler.schedulers.background import BackgroundScheduler
 from datetime import datetime
 
@@ -260,7 +261,13 @@ async def get_time(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
 
     try:
-        booking_id = add_booking(name, phone, service, date, appt_time, chat_id)
+        try:
+            event_id = create_calendar_event(name, phone, service, date, appt_time)
+        except Exception:
+            traceback.print_exc()
+            event_id = ""
+
+        booking_id = add_booking(name, phone, service, date, appt_time, chat_id, event_id)
         await update.message.reply_text(
             t(context, "confirmed").format(name=name, phone=phone, service=service, date=date, time=appt_time),
             reply_markup=MAIN_MENU,
@@ -372,6 +379,17 @@ async def change_new_time(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     try:
         update_booking_schedule(booking["row"], new_date, new_time)
+
+        try:
+            event_id = booking.get("event_id", "")
+            if event_id:
+                update_calendar_event(event_id, booking["name"], booking["phone"], booking["service"], new_date, new_time)
+            else:
+                new_event_id = create_calendar_event(booking["name"], booking["phone"], booking["service"], new_date, new_time)
+                save_event_id(booking["row"], new_event_id)
+        except Exception:
+            traceback.print_exc()
+
         await update.message.reply_text(
             t(context, "schedule_updated").format(
                 service=booking["service"], date=new_date, time=new_time
@@ -434,6 +452,14 @@ async def cancel_appt_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE
     if answer.startswith("✅"):
         try:
             cancel_booking_by_row(booking["row"])
+
+            try:
+                event_id = booking.get("event_id", "")
+                if event_id:
+                    delete_calendar_event(event_id)
+            except Exception:
+                traceback.print_exc()
+
             await update.message.reply_text(t(context, "appointment_cancelled"), reply_markup=MAIN_MENU)
             await context.bot.send_message(
                 chat_id=OWNER_CHAT_ID,

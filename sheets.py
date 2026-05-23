@@ -17,6 +17,7 @@ COL_TIME      = 6
 COL_STATUS    = 7
 COL_BOOKED_AT = 8
 COL_CHAT_ID   = 9
+COL_EVENT_ID  = 10
 
 _sheet = None
 
@@ -33,7 +34,7 @@ def get_sheet():
     return _sheet
 
 
-def add_booking(name, phone, service, date, appt_time, chat_id):
+def add_booking(name, phone, service, date, appt_time, chat_id, event_id=""):
     sheet = get_sheet()
     all_rows = sheet.get_all_values()
     next_row = len(all_rows) + 1
@@ -41,8 +42,8 @@ def add_booking(name, phone, service, date, appt_time, chat_id):
     new_id = max(existing_ids) + 1 if existing_ids else 1
     booked_at = datetime.now().strftime("%Y-%m-%d %H:%M")
     sheet.update(
-        f"A{next_row}:I{next_row}",
-        [[new_id, name, phone, service, date, appt_time, "Confirmed", booked_at, str(chat_id)]],
+        f"A{next_row}:J{next_row}",
+        [[new_id, name, phone, service, date, appt_time, "Confirmed", booked_at, str(chat_id), event_id]],
     )
     return new_id
 
@@ -62,6 +63,7 @@ def find_booking_by_phone(phone):
                 "service": row[COL_SERVICE - 1],
                 "date": row[COL_DATE - 1],
                 "time": row[COL_TIME - 1],
+                "event_id": row[COL_EVENT_ID - 1] if len(row) >= COL_EVENT_ID else "",
             }
     return result
 
@@ -82,6 +84,7 @@ def find_any_booking_by_phone(phone):
                 "date": row[COL_DATE - 1],
                 "time": row[COL_TIME - 1],
                 "status": row[COL_STATUS - 1],
+                "event_id": row[COL_EVENT_ID - 1] if len(row) >= COL_EVENT_ID else "",
             }
     return result
 
@@ -90,6 +93,11 @@ def update_booking_schedule(row_num, new_date, new_time):
     sheet = get_sheet()
     # Also resets status to Confirmed so cancelled bookings can be reactivated
     sheet.update(f"E{row_num}:G{row_num}", [[new_date, new_time, "Confirmed"]])
+
+
+def save_event_id(row_num, event_id):
+    sheet = get_sheet()
+    sheet.update_cell(row_num, COL_EVENT_ID, event_id)
 
 
 def cancel_booking_by_row(row_num):
