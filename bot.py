@@ -4,8 +4,8 @@ import asyncio
 from dotenv import load_dotenv
 from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import (
-    Application, MessageHandler, CommandHandler, filters,
-    ContextTypes, ConversationHandler, PicklePersistence,
+    Application, MessageHandler, CommandHandler, CallbackQueryHandler,
+    filters, ContextTypes, ConversationHandler, PicklePersistence,
 )
 from sheets import add_booking, find_booking_by_phone, find_any_booking_by_phone, update_booking_schedule, save_event_id, cancel_booking_by_row, get_bookings_by_date, get_tomorrows_bookings
 from calendar_sync import create_calendar_event, update_calendar_event, delete_calendar_event, parse_time
@@ -186,17 +186,22 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def book_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data.clear()
-    keyboard = [["🇬🇧 English", "🇰🇭 Khmer"]]
     await update.message.reply_text(
         "Please choose your language / សូមជ្រើសរើសភាសា:",
-        reply_markup=ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=True),
+        reply_markup=InlineKeyboardMarkup([[
+            InlineKeyboardButton("🇬🇧 English", callback_data="lang:en"),
+            InlineKeyboardButton("🇰🇭 Khmer",   callback_data="lang:kh"),
+        ]]),
     )
     return LANGUAGE
 
 
 async def choose_language(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    context.user_data["lang"] = "kh" if "Khmer" in update.message.text else "en"
-    await update.message.reply_text(t(context, "welcome"), reply_markup=ReplyKeyboardRemove())
+    query = update.callback_query
+    await query.answer()
+    context.user_data["lang"] = query.data.split(":")[1]
+    await query.edit_message_reply_markup(reply_markup=None)
+    await query.message.reply_text(t(context, "welcome"), reply_markup=ReplyKeyboardRemove())
     return NAME
 
 
@@ -223,16 +228,27 @@ async def get_phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return ConversationHandler.END
 
     context.user_data["phone"] = phone
+    lang = context.user_data.get("lang", "en")
+    en_services = ["Checkup", "Cleaning", "Toothache", "Filling", "Whitening", "Other"]
+    display = [item for row in TEXTS[lang]["services"] for item in row]
+    rows = [
+        [InlineKeyboardButton(display[i], callback_data=f"svc:{en_services[i]}"),
+         InlineKeyboardButton(display[i+1], callback_data=f"svc:{en_services[i+1]}")]
+        for i in range(0, len(display), 2)
+    ]
     await update.message.reply_text(
         t(context, "ask_service"),
-        reply_markup=ReplyKeyboardMarkup(t(context, "services"), resize_keyboard=True, one_time_keyboard=True),
+        reply_markup=InlineKeyboardMarkup(rows),
     )
     return SERVICE
 
 
 async def get_service(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    context.user_data["service"] = update.message.text
-    await update.message.reply_text(t(context, "ask_date"), reply_markup=ReplyKeyboardRemove())
+    query = update.callback_query
+    await query.answer()
+    context.user_data["service"] = query.data.split(":", 1)[1]
+    await query.edit_message_reply_markup(reply_markup=None)
+    await query.message.reply_text(t(context, "ask_date"), reply_markup=ReplyKeyboardRemove())
     return DATE
 
 
@@ -489,20 +505,26 @@ async def cancel_appt_lookup(update: Update, context: ContextTypes.DEFAULT_TYPE)
         return ConversationHandler.END
 
     context.user_data["booking"] = booking
+    yes_label, no_label = t(context, "yes_no")[0]
     await update.message.reply_text(
         t(context, "cancel_appt_found").format(
             service=booking["service"], date=booking["date"], time=booking["time"]
         ),
-        reply_markup=ReplyKeyboardMarkup(t(context, "yes_no"), resize_keyboard=True, one_time_keyboard=True),
+        reply_markup=InlineKeyboardMarkup([[
+            InlineKeyboardButton(yes_label, callback_data="cancel:yes"),
+            InlineKeyboardButton(no_label,  callback_data="cancel:no"),
+        ]]),
     )
     return CANCEL_CONFIRM
 
 
 async def cancel_appt_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    answer = update.message.text
+    query = update.callback_query
+    await query.answer()
     booking = context.user_data["booking"]
+    await query.edit_message_reply_markup(reply_markup=None)
 
-    if answer.startswith("✅"):
+    if query.data == "cancel:yes":
         try:
             cancel_booking_by_row(booking["row"])
 
@@ -513,7 +535,7 @@ async def cancel_appt_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE
             except Exception:
                 traceback.print_exc()
 
-            await update.message.reply_text(t(context, "appointment_cancelled"), reply_markup=MAIN_MENU)
+            await query.message.reply_text(t(context, "appointment_cancelled"), reply_markup=MAIN_MENU)
             await context.bot.send_message(
                 chat_id=OWNER_CHAT_ID,
                 parse_mode="HTML",
@@ -532,9 +554,9 @@ async def cancel_appt_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE
             )
         except Exception:
             traceback.print_exc()
-            await update.message.reply_text(t(context, "error"), reply_markup=MAIN_MENU)
+            await query.message.reply_text(t(context, "error"), reply_markup=MAIN_MENU)
     else:
-        await update.message.reply_text(t(context, "cancel_aborted"), reply_markup=MAIN_MENU)
+        await query.message.reply_text(t(context, "cancel_aborted"), reply_markup=MAIN_MENU)
 
     return ConversationHandler.END
 
@@ -589,10 +611,10 @@ def main():
     booking_conv = ConversationHandler(
         entry_points=[MessageHandler(filters.Regex("^📅 Book Appointment$"), book_start)],
         states={
-            LANGUAGE: [MessageHandler(filters.TEXT & ~filters.COMMAND, choose_language)],
+            LANGUAGE: [CallbackQueryHandler(choose_language, pattern="^lang:")],
             NAME:     [MessageHandler(filters.TEXT & ~filters.COMMAND, get_name)],
             PHONE:    [MessageHandler(filters.TEXT & ~filters.COMMAND, get_phone)],
-            SERVICE:  [MessageHandler(filters.TEXT & ~filters.COMMAND, get_service)],
+            SERVICE:  [CallbackQueryHandler(get_service, pattern="^svc:")],
             DATE:     [MessageHandler(filters.TEXT & ~filters.COMMAND, get_date)],
             TIME:     [MessageHandler(filters.TEXT & ~filters.COMMAND, get_time)],
         },
@@ -627,7 +649,7 @@ def main():
         entry_points=[MessageHandler(filters.Regex("^❌ Cancel Appointment$"), cancel_appt_start)],
         states={
             CANCEL_PHONE:   [MessageHandler(filters.TEXT & ~filters.COMMAND, cancel_appt_lookup)],
-            CANCEL_CONFIRM: [MessageHandler(filters.TEXT & ~filters.COMMAND, cancel_appt_confirm)],
+            CANCEL_CONFIRM: [CallbackQueryHandler(cancel_appt_confirm, pattern="^cancel:")],
         },
         fallbacks=shared_fallbacks,
         persistent=True,
