@@ -1,6 +1,7 @@
 import os
 import traceback
 import asyncio
+import html as html_lib
 from dotenv import load_dotenv
 from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import (
@@ -325,15 +326,12 @@ async def get_time(update: Update, context: ContextTypes.DEFAULT_TYPE):
             text=(
                 f"🔔 <b>New Booking!</b>\n\n"
                 f"<b>ID:</b> {booking_id}\n"
-                f"<b>Name:</b> {name}\n"
-                f"<b>Phone:</b> {phone}\n"
-                f"<b>Service:</b> {service}\n"
-                f"<b>Date:</b> {date}\n"
-                f"<b>Time:</b> {appt_time}"
+                f"<b>Name:</b> {html_lib.escape(name)}\n"
+                f"<b>Phone:</b> {html_lib.escape(phone)}\n"
+                f"<b>Service:</b> {html_lib.escape(service)}\n"
+                f"<b>Date:</b> {html_lib.escape(date)}\n"
+                f"<b>Time:</b> {html_lib.escape(appt_time)}"
             ),
-            reply_markup=InlineKeyboardMarkup([[
-                InlineKeyboardButton(f"📞 Call {name}", url=f"tel:{phone}"),
-            ]]),
         )
     except Exception:
         traceback.print_exc()
@@ -463,15 +461,12 @@ async def change_new_time(update: Update, context: ContextTypes.DEFAULT_TYPE):
             text=(
                 f"🔄 <b>Booking Rescheduled!</b>\n\n"
                 f"<b>ID:</b> {booking['id']}\n"
-                f"<b>Name:</b> {booking['name']}\n"
-                f"<b>Phone:</b> {booking['phone']}\n"
-                f"<b>Service:</b> {booking['service']}\n"
-                f"<b>New Date:</b> {new_date}\n"
-                f"<b>New Time:</b> {new_time}"
+                f"<b>Name:</b> {html_lib.escape(booking['name'])}\n"
+                f"<b>Phone:</b> {html_lib.escape(booking['phone'])}\n"
+                f"<b>Service:</b> {html_lib.escape(booking['service'])}\n"
+                f"<b>New Date:</b> {html_lib.escape(new_date)}\n"
+                f"<b>New Time:</b> {html_lib.escape(new_time)}"
             ),
-            reply_markup=InlineKeyboardMarkup([[
-                InlineKeyboardButton(f"📞 Call {booking['name']}", url=f"tel:{booking['phone']}"),
-            ]]),
         )
     except Exception:
         traceback.print_exc()
@@ -542,15 +537,12 @@ async def cancel_appt_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE
                 text=(
                     f"❌ <b>Booking Cancelled!</b>\n\n"
                     f"<b>ID:</b> {booking['id']}\n"
-                    f"<b>Name:</b> {booking['name']}\n"
-                    f"<b>Phone:</b> {booking['phone']}\n"
-                    f"<b>Service:</b> {booking['service']}\n"
-                    f"<b>Date:</b> {booking['date']}\n"
-                    f"<b>Time:</b> {booking['time']}"
+                    f"<b>Name:</b> {html_lib.escape(booking['name'])}\n"
+                    f"<b>Phone:</b> {html_lib.escape(booking['phone'])}\n"
+                    f"<b>Service:</b> {html_lib.escape(booking['service'])}\n"
+                    f"<b>Date:</b> {html_lib.escape(booking['date'])}\n"
+                    f"<b>Time:</b> {html_lib.escape(booking['time'])}"
                 ),
-                reply_markup=InlineKeyboardMarkup([[
-                    InlineKeyboardButton(f"📞 Call {booking['name']}", url=f"tel:{booking['phone']}"),
-                ]]),
             )
         except Exception:
             traceback.print_exc()
@@ -585,14 +577,11 @@ def send_reminders_sync(bot_token):
                 parse_mode="HTML",
                 text=(
                     f"⏰ <b>Tomorrow's Appointment</b>\n\n"
-                    f"<b>Name:</b> {booking['Name']}\n"
-                    f"<b>Phone:</b> {booking['Phone']}\n"
-                    f"<b>Service:</b> {booking['Service']}\n"
-                    f"<b>Time:</b> {booking['Time']}"
+                    f"<b>Name:</b> {html_lib.escape(booking['Name'])}\n"
+                    f"<b>Phone:</b> {html_lib.escape(booking['Phone'])}\n"
+                    f"<b>Service:</b> {html_lib.escape(booking['Service'])}\n"
+                    f"<b>Time:</b> {html_lib.escape(booking['Time'])}"
                 ),
-                reply_markup=InlineKeyboardMarkup([[
-                    InlineKeyboardButton(f"📞 Call {booking['Name']}", url=f"tel:{booking['Phone']}"),
-                ]]),
             )
     asyncio.run(_send())
 
