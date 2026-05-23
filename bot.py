@@ -2,7 +2,7 @@ import os
 import traceback
 import asyncio
 from dotenv import load_dotenv
-from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove
+from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import (
     Application, MessageHandler, CommandHandler, filters,
     ContextTypes, ConversationHandler, PicklePersistence,
@@ -315,6 +315,9 @@ async def get_time(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"<b>Date:</b> {date}\n"
                 f"<b>Time:</b> {appt_time}"
             ),
+            reply_markup=InlineKeyboardMarkup([[
+                InlineKeyboardButton(f"📞 Call {name}", url=f"tel:{phone}"),
+            ]]),
         )
     except Exception:
         traceback.print_exc()
@@ -450,6 +453,9 @@ async def change_new_time(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"<b>New Date:</b> {new_date}\n"
                 f"<b>New Time:</b> {new_time}"
             ),
+            reply_markup=InlineKeyboardMarkup([[
+                InlineKeyboardButton(f"📞 Call {booking['name']}", url=f"tel:{booking['phone']}"),
+            ]]),
         )
     except Exception:
         traceback.print_exc()
@@ -520,6 +526,9 @@ async def cancel_appt_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE
                     f"<b>Date:</b> {booking['date']}\n"
                     f"<b>Time:</b> {booking['time']}"
                 ),
+                reply_markup=InlineKeyboardMarkup([[
+                    InlineKeyboardButton(f"📞 Call {booking['name']}", url=f"tel:{booking['phone']}"),
+                ]]),
             )
         except Exception:
             traceback.print_exc()
@@ -559,6 +568,9 @@ def send_reminders_sync(bot_token):
                     f"<b>Service:</b> {booking['Service']}\n"
                     f"<b>Time:</b> {booking['Time']}"
                 ),
+                reply_markup=InlineKeyboardMarkup([[
+                    InlineKeyboardButton(f"📞 Call {booking['Name']}", url=f"tel:{booking['Phone']}"),
+                ]]),
             )
     asyncio.run(_send())
 
