@@ -349,22 +349,26 @@ async def exit_conv(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def location_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     lang = context.user_data.get("lang", "en")
-    keyboard = [[name] for name in STORES]
-    await update.message.reply_text(
-        TEXTS[lang]["choose_store"],
-        reply_markup=ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=True),
-    )
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton(name, callback_data=f"branch:{name}")]
+        for name in STORES
+    ])
+    await update.message.reply_text(TEXTS[lang]["choose_store"], reply_markup=keyboard)
     return STORE_SELECT
 
 
 async def send_store_location(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    store = STORES.get(update.message.text)
+    query = update.callback_query
+    await query.answer()
+    branch_name = query.data.split(":", 1)[1]
+    store = STORES.get(branch_name)
+    await query.edit_message_reply_markup(reply_markup=None)
     if not store:
-        await update.message.reply_text(t(context, "branch_not_found"), reply_markup=MAIN_MENU)
+        await query.message.reply_text(t(context, "branch_not_found"), reply_markup=MAIN_MENU)
         return ConversationHandler.END
-    await update.message.reply_location(latitude=store["lat"], longitude=store["lon"])
-    await update.message.reply_text(
-        f"📍 {update.message.text}\n{store['address']}",
+    await query.message.reply_location(latitude=store["lat"], longitude=store["lon"])
+    await query.message.reply_text(
+        f"📍 {branch_name}\n{store['address']}",
         reply_markup=MAIN_MENU,
     )
     return ConversationHandler.END
@@ -615,7 +619,7 @@ def main():
     location_conv = ConversationHandler(
         entry_points=[MessageHandler(filters.Regex("^📍 Location$"), location_menu)],
         states={
-            STORE_SELECT: [MessageHandler(filters.TEXT & ~filters.COMMAND, send_store_location)],
+            STORE_SELECT: [CallbackQueryHandler(send_store_location, pattern="^branch:")],
         },
         fallbacks=shared_fallbacks,
         persistent=True,
