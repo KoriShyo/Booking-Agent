@@ -279,10 +279,15 @@ async def get_time(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         await context.bot.send_message(
             chat_id=OWNER_CHAT_ID,
+            parse_mode="HTML",
             text=(
-                f"🔔 New Booking!\n\n"
-                f"ID: {booking_id}\nName: {name}\nPhone: {phone}\n"
-                f"Service: {service}\nDate: {date}\nTime: {appt_time}"
+                f"🔔 <b>New Booking!</b>\n\n"
+                f"<b>ID:</b> {booking_id}\n"
+                f"<b>Name:</b> {name}\n"
+                f"<b>Phone:</b> {phone}\n"
+                f"<b>Service:</b> {service}\n"
+                f"<b>Date:</b> {date}\n"
+                f"<b>Time:</b> {appt_time}"
             ),
         )
     except Exception:
@@ -406,10 +411,15 @@ async def change_new_time(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         await context.bot.send_message(
             chat_id=OWNER_CHAT_ID,
+            parse_mode="HTML",
             text=(
-                f"🔄 Booking Rescheduled!\n\n"
-                f"ID: {booking['id']}\nName: {booking['name']}\nPhone: {booking['phone']}\n"
-                f"Service: {booking['service']}\nNew Date: {new_date}\nNew Time: {new_time}"
+                f"🔄 <b>Booking Rescheduled!</b>\n\n"
+                f"<b>ID:</b> {booking['id']}\n"
+                f"<b>Name:</b> {booking['name']}\n"
+                f"<b>Phone:</b> {booking['phone']}\n"
+                f"<b>Service:</b> {booking['service']}\n"
+                f"<b>New Date:</b> {new_date}\n"
+                f"<b>New Time:</b> {new_time}"
             ),
         )
     except Exception:
@@ -471,10 +481,15 @@ async def cancel_appt_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE
             await update.message.reply_text(t(context, "appointment_cancelled"), reply_markup=MAIN_MENU)
             await context.bot.send_message(
                 chat_id=OWNER_CHAT_ID,
+                parse_mode="HTML",
                 text=(
-                    f"❌ Booking Cancelled!\n\n"
-                    f"ID: {booking['id']}\nName: {booking['name']}\nPhone: {booking['phone']}\n"
-                    f"Service: {booking['service']}\nDate: {booking['date']}\nTime: {booking['time']}"
+                    f"❌ <b>Booking Cancelled!</b>\n\n"
+                    f"<b>ID:</b> {booking['id']}\n"
+                    f"<b>Name:</b> {booking['name']}\n"
+                    f"<b>Phone:</b> {booking['phone']}\n"
+                    f"<b>Service:</b> {booking['service']}\n"
+                    f"<b>Date:</b> {booking['date']}\n"
+                    f"<b>Time:</b> {booking['time']}"
                 ),
             )
         except Exception:
@@ -507,10 +522,13 @@ def send_reminders_sync(bot_token):
 
             await bot.send_message(
                 chat_id=OWNER_CHAT_ID,
+                parse_mode="HTML",
                 text=(
-                    f"⏰ Reminder: Tomorrow's appointment\n\n"
-                    f"Name: {booking['Name']}\nPhone: {booking['Phone']}\n"
-                    f"Service: {booking['Service']}\nTime: {booking['Time']}"
+                    f"⏰ <b>Tomorrow's Appointment</b>\n\n"
+                    f"<b>Name:</b> {booking['Name']}\n"
+                    f"<b>Phone:</b> {booking['Phone']}\n"
+                    f"<b>Service:</b> {booking['Service']}\n"
+                    f"<b>Time:</b> {booking['Time']}"
                 ),
             )
     asyncio.run(_send())
