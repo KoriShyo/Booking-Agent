@@ -7,7 +7,7 @@ from telegram.ext import (
     Application, MessageHandler, CommandHandler, filters,
     ContextTypes, ConversationHandler, PicklePersistence,
 )
-from sheets import add_booking, find_booking_by_phone, find_any_booking_by_phone, update_booking_schedule, save_event_id, cancel_booking_by_row, get_tomorrows_bookings
+from sheets import add_booking, find_booking_by_phone, find_any_booking_by_phone, update_booking_schedule, save_event_id, cancel_booking_by_row, get_bookings_by_date, get_tomorrows_bookings
 from calendar_sync import create_calendar_event, update_calendar_event, delete_calendar_event, parse_time
 from apscheduler.schedulers.background import BackgroundScheduler
 from datetime import datetime
@@ -40,6 +40,7 @@ TEXTS = {
         "past_date": "You cannot book a past date. Please choose a future date.",
         "ask_time": "What time do you prefer?\nFormat: 9:30 AM or 14:00",
         "invalid_time": "Invalid time. Please use a format like 9:30 AM or 14:00",
+        "time_conflict": "⚠️ Sorry, our dentist is already booked at that hour. Please choose a different time.",
         "confirmed": (
             "✅ Your appointment is confirmed!\n\n"
             "Name: {name}\nPhone: {phone}\nService: {service}\n"
@@ -94,6 +95,7 @@ TEXTS = {
         "past_date": "អ្នកមិនអាចណាត់ជួបកាលបរិច្ឆេទដែលបានកន្លងផុតទេ។ សូមជ្រើសរើសថ្ងៃអនាគត។",
         "ask_time": "តើអ្នកចង់ណាត់ម៉ោងណា?\nទម្រង់: 9:30 AM ឬ 14:00",
         "invalid_time": "ម៉ោងមិនត្រឹមត្រូវ។ សូមប្រើទម្រង់ដូចជា 9:30 AM ឬ 14:00",
+        "time_conflict": "⚠️ សូមអភ័យទោស! គ្រូពេទ្យធ្មេញរបស់យើងត្រូវបានកក់ហើយក្នុងម៉ោងនោះ។ សូមជ្រើសរើសម៉ោងផ្សេង។",
         "confirmed": (
             "✅ ការណាត់ជួបរបស់អ្នកត្រូវបានបញ្ជាក់!\n\n"
             "ឈ្មោះ: {name}\nទូរស័ព្ទ: {phone}\nសេវា: {service}\n"
@@ -254,10 +256,34 @@ async def get_date(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return TIME
 
 
+def _slot_conflicts(new_time_str, existing_bookings, exclude_row=None):
+    """Return True if new_time_str overlaps any confirmed booking (1-hour slots)."""
+    new = parse_time(new_time_str)
+    if not new:
+        return False
+    new_start = new[0] * 60 + new[1]
+    new_end   = new_start + 60
+    for b in existing_bookings:
+        if exclude_row and b["row"] == exclude_row:
+            continue
+        existing = parse_time(b["time"])
+        if not existing:
+            continue
+        ex_start = existing[0] * 60 + existing[1]
+        ex_end   = ex_start + 60
+        if new_start < ex_end and new_end > ex_start:
+            return True
+    return False
+
+
 async def get_time(update: Update, context: ContextTypes.DEFAULT_TYPE):
     appt_time = update.message.text.strip()
     if parse_time(appt_time) is None:
         await update.message.reply_text(t(context, "invalid_time"))
+        return TIME
+    date = context.user_data["date"]
+    if _slot_conflicts(appt_time, get_bookings_by_date(date)):
+        await update.message.reply_text(t(context, "time_conflict"))
         return TIME
     name = context.user_data["name"]
     phone = context.user_data["phone"]
@@ -389,6 +415,9 @@ async def change_new_time(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return CHANGE_TIME
     new_date = context.user_data["new_date"]
     booking = context.user_data["booking"]
+    if _slot_conflicts(new_time, get_bookings_by_date(new_date), exclude_row=booking["row"]):
+        await update.message.reply_text(t(context, "time_conflict"))
+        return CHANGE_TIME
 
     try:
         update_booking_schedule(booking["row"], new_date, new_time)

@@ -100,6 +100,17 @@ def save_event_id(row_num, event_id):
     sheet.update_cell(row_num, COL_EVENT_ID, event_id)
 
 
+def get_bookings_by_date(date_str):
+    """Return all Confirmed bookings for a given date."""
+    sheet = get_sheet()
+    all_rows = sheet.get_all_values()
+    result = []
+    for i, row in enumerate(all_rows[1:], start=2):
+        if len(row) >= 7 and row[COL_DATE - 1] == date_str and row[COL_STATUS - 1] == "Confirmed":
+            result.append({"row": i, "time": row[COL_TIME - 1]})
+    return result
+
+
 def cancel_booking_by_row(row_num):
     sheet = get_sheet()
     sheet.update_cell(row_num, COL_STATUS, "Cancelled")
