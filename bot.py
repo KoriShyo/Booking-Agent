@@ -8,7 +8,7 @@ from telegram.ext import (
     ContextTypes, ConversationHandler, PicklePersistence,
 )
 from sheets import add_booking, find_booking_by_phone, find_any_booking_by_phone, update_booking_schedule, save_event_id, cancel_booking_by_row, get_tomorrows_bookings
-from calendar_sync import create_calendar_event, update_calendar_event, delete_calendar_event
+from calendar_sync import create_calendar_event, update_calendar_event, delete_calendar_event, parse_time
 from apscheduler.schedulers.background import BackgroundScheduler
 from datetime import datetime
 
@@ -38,7 +38,8 @@ TEXTS = {
         "ask_date": "What date do you prefer?\nFormat: 25/05/2026",
         "invalid_date": "Invalid date. Please use the format: 25/05/2026",
         "past_date": "You cannot book a past date. Please choose a future date.",
-        "ask_time": "What time do you prefer?",
+        "ask_time": "What time do you prefer?\nFormat: 9:30 AM or 14:00",
+        "invalid_time": "Invalid time. Please use a format like 9:30 AM or 14:00",
         "confirmed": (
             "✅ Your appointment is confirmed!\n\n"
             "Name: {name}\nPhone: {phone}\nService: {service}\n"
@@ -91,7 +92,8 @@ TEXTS = {
         "ask_date": "តើអ្នកចង់ណាត់ជួបថ្ងៃណា?\nទម្រង់: 25/05/2026",
         "invalid_date": "កាលបរិច្ឆេទមិនត្រឹមត្រូវ។ សូមប្រើទម្រង់: 25/05/2026",
         "past_date": "អ្នកមិនអាចណាត់ជួបកាលបរិច្ឆេទដែលបានកន្លងផុតទេ។ សូមជ្រើសរើសថ្ងៃអនាគត។",
-        "ask_time": "តើអ្នកចង់ណាត់ម៉ោងណា?",
+        "ask_time": "តើអ្នកចង់ណាត់ម៉ោងណា?\nទម្រង់: 9:30 AM ឬ 14:00",
+        "invalid_time": "ម៉ោងមិនត្រឹមត្រូវ។ សូមប្រើទម្រង់ដូចជា 9:30 AM ឬ 14:00",
         "confirmed": (
             "✅ ការណាត់ជួបរបស់អ្នកត្រូវបានបញ្ជាក់!\n\n"
             "ឈ្មោះ: {name}\nទូរស័ព្ទ: {phone}\nសេវា: {service}\n"
@@ -247,13 +249,16 @@ async def get_date(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["date"] = date_text
     await update.message.reply_text(
         t(context, "ask_time"),
-        reply_markup=ReplyKeyboardMarkup(t(context, "times"), resize_keyboard=True, one_time_keyboard=True),
+        reply_markup=ReplyKeyboardRemove(),
     )
     return TIME
 
 
 async def get_time(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    appt_time = update.message.text
+    appt_time = update.message.text.strip()
+    if parse_time(appt_time) is None:
+        await update.message.reply_text(t(context, "invalid_time"))
+        return TIME
     name = context.user_data["name"]
     phone = context.user_data["phone"]
     service = context.user_data["service"]
@@ -367,13 +372,16 @@ async def change_new_date(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["new_date"] = date_text
     await update.message.reply_text(
         t(context, "ask_time"),
-        reply_markup=ReplyKeyboardMarkup(t(context, "times"), resize_keyboard=True, one_time_keyboard=True),
+        reply_markup=ReplyKeyboardRemove(),
     )
     return CHANGE_TIME
 
 
 async def change_new_time(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    new_time = update.message.text
+    new_time = update.message.text.strip()
+    if parse_time(new_time) is None:
+        await update.message.reply_text(t(context, "invalid_time"))
+        return CHANGE_TIME
     new_date = context.user_data["new_date"]
     booking = context.user_data["booking"]
 

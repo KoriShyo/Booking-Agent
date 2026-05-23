@@ -7,14 +7,19 @@ from googleapiclient.discovery import build
 CALENDAR_ID = os.getenv("GOOGLE_CALENDAR_ID", "visalsen72@gmail.com")
 SCOPES = ["https://www.googleapis.com/auth/calendar"]
 
-TIME_SLOTS = {
-    # English
-    "Morning":   ("09:00", "10:00"),
-    "Afternoon": ("14:00", "15:00"),
-    # Khmer
-    "ព្រឹក":     ("09:00", "10:00"),
-    "រសៀល":     ("14:00", "15:00"),
-}
+_TIME_FORMATS = ["%I:%M %p", "%I:%M%p", "%H:%M", "%I %p", "%I%p"]
+
+
+def parse_time(time_str):
+    """Parse a user-typed time string. Returns (hour, minute) or None if unparseable."""
+    cleaned = time_str.strip().upper()
+    for fmt in _TIME_FORMATS:
+        try:
+            t = datetime.strptime(cleaned, fmt)
+            return t.hour, t.minute
+        except ValueError:
+            continue
+    return None
 
 _service = None
 
@@ -34,19 +39,19 @@ def _get_service():
 
 
 def _build_event_body(name, phone, service, date_str, appt_time):
-    start_time, end_time = TIME_SLOTS.get(appt_time, ("09:00", "10:00"))
-    # date_str is DD/MM/YYYY
+    parsed = parse_time(appt_time)
+    hour, minute = parsed if parsed else (9, 0)
     date_obj = datetime.strptime(date_str, "%d/%m/%Y")
     timezone = "Asia/Phnom_Penh"
 
-    start_dt = f"{date_obj.strftime('%Y-%m-%d')}T{start_time}:00"
-    end_dt   = f"{date_obj.strftime('%Y-%m-%d')}T{end_time}:00"
+    start = date_obj.replace(hour=hour, minute=minute)
+    end   = start + timedelta(hours=1)
 
     return {
         "summary": f"🦷 {service} — {name}",
         "description": f"Patient: {name}\nPhone: {phone}\nService: {service}",
-        "start": {"dateTime": start_dt, "timeZone": timezone},
-        "end":   {"dateTime": end_dt,   "timeZone": timezone},
+        "start": {"dateTime": start.strftime("%Y-%m-%dT%H:%M:00"), "timeZone": timezone},
+        "end":   {"dateTime": end.strftime("%Y-%m-%dT%H:%M:00"),   "timeZone": timezone},
     }
 
 
