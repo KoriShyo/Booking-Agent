@@ -167,6 +167,11 @@ MAIN_MENU = ReplyKeyboardMarkup(
     resize_keyboard=True,
 )
 
+OWNER_MENU = ReplyKeyboardMarkup(
+    [["📊 Daily Report"]],
+    resize_keyboard=True,
+)
+
 
 def t(context, key):
     lang = context.user_data.get("lang", "en")
@@ -180,6 +185,9 @@ def _is_owner(update: Update) -> bool:
 # ── /start ────────────────────────────────────────────────────────────────────
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if _is_owner(update):
+        await update.message.reply_text("👨‍⚕️ Owner panel. You will receive all booking notifications.", reply_markup=OWNER_MENU)
+        return ConversationHandler.END
     lang = context.user_data.get("lang", "en")
     greeting = (
         "Welcome to our dental clinic! 🦷\nHow can I help you?"
@@ -195,7 +203,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def book_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if _is_owner(update):
         lang = context.user_data.get("lang", "en")
-        await update.message.reply_text(TEXTS[lang]["owner_blocked"], reply_markup=MAIN_MENU)
+        await update.message.reply_text(TEXTS[lang]["owner_blocked"], reply_markup=OWNER_MENU)
         return ConversationHandler.END
     context.user_data.clear()
     await update.message.reply_text(
@@ -361,7 +369,7 @@ async def exit_conv(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def location_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if _is_owner(update):
         lang = context.user_data.get("lang", "en")
-        await update.message.reply_text(TEXTS[lang]["owner_blocked"], reply_markup=MAIN_MENU)
+        await update.message.reply_text(TEXTS[lang]["owner_blocked"], reply_markup=OWNER_MENU)
         return ConversationHandler.END
     lang = context.user_data.get("lang", "en")
     keyboard = InlineKeyboardMarkup([
@@ -394,7 +402,7 @@ async def send_store_location(update: Update, context: ContextTypes.DEFAULT_TYPE
 async def change_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if _is_owner(update):
         lang = context.user_data.get("lang", "en")
-        await update.message.reply_text(TEXTS[lang]["owner_blocked"], reply_markup=MAIN_MENU)
+        await update.message.reply_text(TEXTS[lang]["owner_blocked"], reply_markup=OWNER_MENU)
         return ConversationHandler.END
     lang = context.user_data.get("lang", "en")
     await update.message.reply_text(TEXTS[lang]["ask_phone_lookup"], reply_markup=ReplyKeyboardRemove())
@@ -502,7 +510,7 @@ async def change_new_time(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def cancel_appt_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if _is_owner(update):
         lang = context.user_data.get("lang", "en")
-        await update.message.reply_text(TEXTS[lang]["owner_blocked"], reply_markup=MAIN_MENU)
+        await update.message.reply_text(TEXTS[lang]["owner_blocked"], reply_markup=OWNER_MENU)
         return ConversationHandler.END
     lang = context.user_data.get("lang", "en")
     await update.message.reply_text(TEXTS[lang]["ask_phone_lookup"], reply_markup=ReplyKeyboardRemove())
@@ -588,7 +596,7 @@ async def report_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     today = datetime.now().strftime("%d/%m/%Y")
     report = get_daily_report(today)
     if not report:
-        await update.message.reply_text("❌ Could not load report.", reply_markup=MAIN_MENU)
+        await update.message.reply_text("❌ Could not load report.", reply_markup=OWNER_MENU)
         return
     await update.message.reply_text(
         f"📊 <b>Daily Report — {report['date']}</b>\n\n"
@@ -597,7 +605,7 @@ async def report_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"✅ Completed: <b>{report['completed']}</b>\n"
         f"❌ Cancelled: <b>{report['cancelled']}</b>",
         parse_mode="HTML",
-        reply_markup=MAIN_MENU,
+        reply_markup=OWNER_MENU,
     )
 
 
