@@ -21,6 +21,30 @@ COL_EVENT_ID  = 10
 
 _sheet = None
 
+_DATE_FORMATS = ["%d/%m/%Y", "%m/%d/%Y", "%Y-%m-%d", "%d-%m-%Y"]
+
+
+def _parse_date(cell_value):
+    """Parse a date string from Google Sheets regardless of how it was stored."""
+    s = str(cell_value).strip()
+    for fmt in _DATE_FORMATS:
+        try:
+            return datetime.strptime(s, fmt).date()
+        except ValueError:
+            continue
+    return None
+
+
+def _dates_equal(cell_value, date_str):
+    """Return True if cell_value represents the same date as date_str (DD/MM/YYYY)."""
+    target = _parse_date(date_str)
+    if target is None:
+        return cell_value == date_str
+    row_date = _parse_date(cell_value)
+    if row_date is None:
+        return False
+    return row_date == target
+
 
 def get_sheet():
     global _sheet
@@ -44,6 +68,7 @@ def add_booking(name, phone, service, date, appt_time, chat_id, event_id=""):
     sheet.update(
         f"A{next_row}:J{next_row}",
         [[new_id, name, phone, service, date, appt_time, "Confirmed", booked_at, str(chat_id), event_id]],
+        value_input_option="RAW",
     )
     return new_id
 
@@ -91,8 +116,7 @@ def find_any_booking_by_phone(phone):
 
 def update_booking_schedule(row_num, new_date, new_time):
     sheet = get_sheet()
-    # Also resets status to Confirmed so cancelled bookings can be reactivated
-    sheet.update(f"E{row_num}:G{row_num}", [[new_date, new_time, "Confirmed"]])
+    sheet.update(f"E{row_num}:G{row_num}", [[new_date, new_time, "Confirmed"]], value_input_option="RAW")
 
 
 def save_event_id(row_num, event_id):
@@ -106,7 +130,7 @@ def get_bookings_by_date(date_str):
     all_rows = sheet.get_all_values()
     result = []
     for i, row in enumerate(all_rows[1:], start=2):
-        if len(row) >= 7 and row[COL_DATE - 1] == date_str and row[COL_STATUS - 1] == "Confirmed":
+        if len(row) >= 7 and _dates_equal(row[COL_DATE - 1], date_str) and row[COL_STATUS - 1] == "Confirmed":
             result.append({"row": i, "time": row[COL_TIME - 1]})
     return result
 
@@ -118,26 +142,33 @@ def cancel_booking_by_row(row_num):
 
 def get_tomorrows_bookings():
     sheet = get_sheet()
-    tomorrow = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
-    records = sheet.get_all_records()
-    return [
-        r for r in records
-        if r.get("Date") == tomorrow and r.get("Status") == "Confirmed"
-    ]
+    tomorrow = (datetime.now() + timedelta(days=1)).strftime("%d/%m/%Y")
+    all_rows = sheet.get_all_values()
+    result = []
+    for row in all_rows[1:]:
+        if len(row) >= 9 and _dates_equal(row[COL_DATE - 1], tomorrow) and row[COL_STATUS - 1] == "Confirmed":
+            result.append({
+                "Name": row[COL_NAME - 1],
+                "Phone": row[COL_PHONE - 1],
+                "Service": row[COL_SERVICE - 1],
+                "Date": row[COL_DATE - 1],
+                "Time": row[COL_TIME - 1],
+                "Chat_ID": row[COL_CHAT_ID - 1],
+            })
+    return result
 
 
 def get_daily_report(date_str):
     """Return booking stats for a given date (DD/MM/YYYY)."""
     sheet = get_sheet()
     all_rows = sheet.get_all_values()
-    try:
-        report_day = datetime.strptime(date_str, "%d/%m/%Y").date()
-        today = datetime.now().date()
-    except ValueError:
+    report_day = _parse_date(date_str)
+    if report_day is None:
         return None
+    today = datetime.now().date()
     total = confirmed = cancelled = 0
     for row in all_rows[1:]:
-        if len(row) < 7 or row[COL_DATE - 1] != date_str:
+        if len(row) < 7 or not _dates_equal(row[COL_DATE - 1], date_str):
             continue
         total += 1
         status = row[COL_STATUS - 1]
