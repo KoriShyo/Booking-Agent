@@ -158,28 +158,34 @@ def get_tomorrows_bookings():
     return result
 
 
-def get_daily_report(date_str):
-    """Return booking stats for a given date (DD/MM/YYYY)."""
+def get_report_range(start_str, end_str):
+    """Return booking stats for a date range (DD/MM/YYYY). Pass same date for daily report."""
     sheet = get_sheet()
     all_rows = sheet.get_all_values()
-    report_day = _parse_date(date_str)
-    if report_day is None:
+    start = _parse_date(start_str)
+    end = _parse_date(end_str)
+    if start is None or end is None:
         return None
     today = datetime.now().date()
-    total = confirmed = cancelled = 0
+    total = completed = not_yet = cancelled = 0
     for row in all_rows[1:]:
-        if len(row) < 7 or not _dates_equal(row[COL_DATE - 1], date_str):
+        if len(row) < 7:
+            continue
+        row_date = _parse_date(row[COL_DATE - 1])
+        if row_date is None or not (start <= row_date <= end):
             continue
         total += 1
         status = row[COL_STATUS - 1]
         if status == "Confirmed":
-            confirmed += 1
+            if row_date < today:
+                completed += 1
+            else:
+                not_yet += 1
         elif status == "Cancelled":
             cancelled += 1
-    completed = confirmed if report_day < today else 0
-    not_yet = confirmed if report_day >= today else 0
     return {
-        "date": date_str,
+        "start": start_str,
+        "end": end_str,
         "total": total,
         "cancelled": cancelled,
         "completed": completed,

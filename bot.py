@@ -1,4 +1,5 @@
 import os
+import re
 import traceback
 import asyncio
 import html as html_lib
@@ -8,7 +9,7 @@ from telegram.ext import (
     Application, MessageHandler, CommandHandler, CallbackQueryHandler,
     filters, ContextTypes, ConversationHandler, PicklePersistence,
 )
-from sheets import add_booking, find_booking_by_phone, find_any_booking_by_phone, update_booking_schedule, save_event_id, cancel_booking_by_row, get_bookings_by_date, get_tomorrows_bookings, get_daily_report
+from sheets import add_booking, find_booking_by_phone, find_any_booking_by_phone, update_booking_schedule, save_event_id, cancel_booking_by_row, get_bookings_by_date, get_tomorrows_bookings, get_report_range
 from calendar_sync import create_calendar_event, update_calendar_event, delete_calendar_event, parse_time
 from apscheduler.schedulers.background import BackgroundScheduler
 from datetime import datetime
@@ -29,6 +30,8 @@ STORE_SELECT = 6
 CHANGE_PHONE, CHANGE_DATE, CHANGE_TIME = range(7, 10)
 # Cancel appointment states
 CANCEL_PHONE, CANCEL_CONFIRM = range(10, 12)
+# Report states
+REPORT_DATE, REPORT_INPUT = 12, 13
 
 TEXTS = {
     "en": {
@@ -590,23 +593,91 @@ async def cancel_appt_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE
 
 # ── Daily report ─────────────────────────────────────────────────────────────
 
-async def report_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not _is_owner(update):
-        return
-    today = datetime.now().strftime("%d/%m/%Y")
-    report = get_daily_report(today)
-    if not report:
-        await update.message.reply_text("❌ Could not load report.", reply_markup=OWNER_MENU)
-        return
-    await update.message.reply_text(
-        f"📊 <b>Daily Report — {report['date']}</b>\n\n"
+async def _delete_after(bot, chat_id, message_id, delay):
+    await asyncio.sleep(delay)
+    try:
+        await bot.delete_message(chat_id=chat_id, message_id=message_id)
+    except Exception:
+        pass
+
+
+def _format_report(report, title):
+    return (
+        f"📊 <b>{title}</b>\n\n"
         f"📋 Total Bookings: <b>{report['total']}</b>\n"
         f"⏳ Not Yet (upcoming): <b>{report['not_yet']}</b>\n"
         f"✅ Completed: <b>{report['completed']}</b>\n"
-        f"❌ Cancelled: <b>{report['cancelled']}</b>",
+        f"❌ Cancelled: <b>{report['cancelled']}</b>\n\n"
+        f"<i>⏳ This message disappears in 3 minutes.</i>"
+    )
+
+
+async def report_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not _is_owner(update):
+        return ConversationHandler.END
+    await update.message.reply_text(
+        "📊 Choose report period:",
+        reply_markup=InlineKeyboardMarkup([[
+            InlineKeyboardButton("📅 Today", callback_data="rep:today"),
+            InlineKeyboardButton("📆 Custom Range", callback_data="rep:custom"),
+        ]]),
+    )
+    return REPORT_DATE
+
+
+async def report_choose(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    await query.edit_message_reply_markup(reply_markup=None)
+
+    if query.data == "rep:today":
+        today = datetime.now().strftime("%d/%m/%Y")
+        report = get_report_range(today, today)
+        if not report:
+            await query.message.reply_text("❌ Could not load report.", reply_markup=OWNER_MENU)
+            return ConversationHandler.END
+        msg = await query.message.reply_text(
+            _format_report(report, f"Report — {today}"),
+            parse_mode="HTML",
+            reply_markup=OWNER_MENU,
+        )
+        asyncio.create_task(_delete_after(context.bot, msg.chat_id, msg.message_id, 180))
+        return ConversationHandler.END
+
+    await query.message.reply_text(
+        "📅 Enter a date or range:\n\n"
+        "Single day: <code>25/05/2026</code>\n"
+        "Range: <code>01/05/2026 - 31/05/2026</code>",
+        parse_mode="HTML",
+        reply_markup=ReplyKeyboardRemove(),
+    )
+    return REPORT_INPUT
+
+
+async def report_date_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = update.message.text.strip()
+    m = re.match(r'^(\d{1,2}/\d{1,2}/\d{4})\s*-\s*(\d{1,2}/\d{1,2}/\d{4})$', text)
+    if m:
+        start_str, end_str = m.group(1), m.group(2)
+    else:
+        start_str = end_str = text
+
+    report = get_report_range(start_str, end_str)
+    if not report:
+        await update.message.reply_text(
+            "❌ Invalid format. Use <code>DD/MM/YYYY</code> or <code>DD/MM/YYYY - DD/MM/YYYY</code>",
+            parse_mode="HTML",
+        )
+        return REPORT_INPUT
+
+    title = f"Report — {start_str}" if start_str == end_str else f"Report — {start_str} to {end_str}"
+    msg = await update.message.reply_text(
+        _format_report(report, title),
         parse_mode="HTML",
         reply_markup=OWNER_MENU,
     )
+    asyncio.create_task(_delete_after(context.bot, msg.chat_id, msg.message_id, 180))
+    return ConversationHandler.END
 
 
 # ── Reminder scheduler ────────────────────────────────────────────────────────
@@ -701,12 +772,23 @@ def main():
         name="cancel_conv",
     )
 
+    report_conv = ConversationHandler(
+        entry_points=[MessageHandler(filters.Regex("^📊 Daily Report$"), report_handler)],
+        states={
+            REPORT_DATE:  [CallbackQueryHandler(report_choose, pattern="^rep:")],
+            REPORT_INPUT: [MessageHandler(filters.TEXT & ~filters.COMMAND, report_date_input)],
+        },
+        fallbacks=shared_fallbacks,
+        persistent=True,
+        name="report_conv",
+    )
+
     app.add_handler(CommandHandler("start", start))
     app.add_handler(booking_conv)
     app.add_handler(location_conv)
     app.add_handler(change_conv)
     app.add_handler(cancel_conv)
-    app.add_handler(MessageHandler(filters.Regex("^📊 Daily Report$"), report_handler))
+    app.add_handler(report_conv)
 
     scheduler = BackgroundScheduler()
     scheduler.add_job(send_reminders_sync, "cron", hour=8, minute=0, args=[TELEGRAM_BOT_TOKEN])
