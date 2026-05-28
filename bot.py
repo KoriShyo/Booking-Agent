@@ -697,15 +697,16 @@ async def report_cal_end(update: Update, context: ContextTypes.DEFAULT_TYPE):
     end_str = f"{day:02d}/{month:02d}/{year}"
     start_str = context.user_data.pop("report_start", end_str)
 
-    await query.edit_message_reply_markup(reply_markup=None)
     report = get_report_range(start_str, end_str)
+    await query.delete_message()
     if not report:
-        await query.message.reply_text("❌ Could not load report.", reply_markup=OWNER_MENU)
+        await context.bot.send_message(chat_id=query.message.chat_id, text="❌ Could not load report.", reply_markup=OWNER_MENU)
         return ConversationHandler.END
 
     title = f"Report — {start_str}" if start_str == end_str else f"Report — {start_str} to {end_str}"
-    msg = await query.message.reply_text(
-        _format_report(report, title),
+    msg = await context.bot.send_message(
+        chat_id=query.message.chat_id,
+        text=_format_report(report, title),
         parse_mode="HTML",
         reply_markup=OWNER_MENU,
     )
