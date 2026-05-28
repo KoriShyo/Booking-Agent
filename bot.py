@@ -1,5 +1,5 @@
 import os
-import re
+import calendar as _cal
 import traceback
 import asyncio
 import html as html_lib
@@ -601,6 +601,31 @@ async def _delete_after(bot, chat_id, message_id, delay):
         pass
 
 
+def _build_calendar(year, month):
+    prev_y, prev_m = (year, month - 1) if month > 1 else (year - 1, 12)
+    next_y, next_m = (year, month + 1) if month < 12 else (year + 1, 1)
+    label = datetime(year, month, 1).strftime("%B %Y")
+    kb = [
+        [
+            InlineKeyboardButton("◀", callback_data=f"cal:nav:{prev_y}:{prev_m}"),
+            InlineKeyboardButton(label, callback_data="cal:x"),
+            InlineKeyboardButton("▶", callback_data=f"cal:nav:{next_y}:{next_m}"),
+        ],
+        [InlineKeyboardButton(d, callback_data="cal:x") for d in ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"]],
+    ]
+    for week in _cal.monthcalendar(year, month):
+        kb.append([
+            InlineKeyboardButton(str(day), callback_data=f"cal:day:{year}:{month}:{day}")
+            if day else InlineKeyboardButton(" ", callback_data="cal:x")
+            for day in week
+        ])
+    today = datetime.now()
+    kb.append([InlineKeyboardButton(
+        "📅 Today", callback_data=f"cal:day:{today.year}:{today.month}:{today.day}"
+    )])
+    return InlineKeyboardMarkup(kb)
+
+
 def _format_report(report, title):
     return (
         f"📊 <b>{title}</b>\n\n"
@@ -608,70 +633,78 @@ def _format_report(report, title):
         f"⏳ Not Yet (upcoming): <b>{report['not_yet']}</b>\n"
         f"✅ Completed: <b>{report['completed']}</b>\n"
         f"❌ Cancelled: <b>{report['cancelled']}</b>\n\n"
-        f"<i>⏳ This message disappears in 3 minutes.</i>"
+        f"<i>This message disappears in 3 minutes.</i>"
     )
 
 
 async def report_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not _is_owner(update):
         return ConversationHandler.END
+    now = datetime.now()
     await update.message.reply_text(
-        "📊 Choose report period:",
-        reply_markup=InlineKeyboardMarkup([[
-            InlineKeyboardButton("📅 Today", callback_data="rep:today"),
-            InlineKeyboardButton("📆 Custom Range", callback_data="rep:custom"),
-        ]]),
+        "📊 Select <b>start date</b>:",
+        parse_mode="HTML",
+        reply_markup=_build_calendar(now.year, now.month),
     )
     return REPORT_DATE
 
 
-async def report_choose(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def report_cal_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-    await query.edit_message_reply_markup(reply_markup=None)
+    parts = query.data.split(":")
 
-    if query.data == "rep:today":
-        today = datetime.now().strftime("%d/%m/%Y")
-        report = get_report_range(today, today)
-        if not report:
-            await query.message.reply_text("❌ Could not load report.", reply_markup=OWNER_MENU)
-            return ConversationHandler.END
-        msg = await query.message.reply_text(
-            _format_report(report, f"Report — {today}"),
-            parse_mode="HTML",
-            reply_markup=OWNER_MENU,
-        )
-        asyncio.create_task(_delete_after(context.bot, msg.chat_id, msg.message_id, 180))
-        return ConversationHandler.END
+    if parts[1] == "x":
+        return REPORT_DATE
 
-    await query.message.reply_text(
-        "📅 Enter a date or range:\n\n"
-        "Single day: <code>25/05/2026</code>\n"
-        "Range: <code>01/05/2026 - 31/05/2026</code>",
+    if parts[1] == "nav":
+        year, month = int(parts[2]), int(parts[3])
+        await query.edit_message_reply_markup(reply_markup=_build_calendar(year, month))
+        return REPORT_DATE
+
+    year, month, day = int(parts[2]), int(parts[3]), int(parts[4])
+    start_str = f"{day:02d}/{month:02d}/{year}"
+    context.user_data["report_start"] = start_str
+    await query.edit_message_text(
+        f"📊 Start: <b>{start_str}</b> ✅\n\nSelect <b>end date</b>:\n"
+        f"<i>(tap the same date for a single-day report)</i>",
         parse_mode="HTML",
-        reply_markup=ReplyKeyboardRemove(),
+        reply_markup=_build_calendar(year, month),
     )
     return REPORT_INPUT
 
 
-async def report_date_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    text = update.message.text.strip()
-    m = re.match(r'^(\d{1,2}/\d{1,2}/\d{4})\s*-\s*(\d{1,2}/\d{1,2}/\d{4})$', text)
-    if m:
-        start_str, end_str = m.group(1), m.group(2)
-    else:
-        start_str = end_str = text
+async def report_cal_end(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    parts = query.data.split(":")
 
-    report = get_report_range(start_str, end_str)
-    if not report:
-        await update.message.reply_text(
-            "❌ Invalid format. Use <code>DD/MM/YYYY</code> or <code>DD/MM/YYYY - DD/MM/YYYY</code>",
+    if parts[1] == "x":
+        return REPORT_INPUT
+
+    if parts[1] == "nav":
+        year, month = int(parts[2]), int(parts[3])
+        start_str = context.user_data.get("report_start", "")
+        await query.edit_message_text(
+            f"📊 Start: <b>{start_str}</b> ✅\n\nSelect <b>end date</b>:\n"
+            f"<i>(tap the same date for a single-day report)</i>",
             parse_mode="HTML",
+            reply_markup=_build_calendar(year, month),
         )
         return REPORT_INPUT
 
+    year, month, day = int(parts[2]), int(parts[3]), int(parts[4])
+    end_str = f"{day:02d}/{month:02d}/{year}"
+    start_str = context.user_data.pop("report_start", end_str)
+
+    await query.edit_message_reply_markup(reply_markup=None)
+    report = get_report_range(start_str, end_str)
+    if not report:
+        await query.message.reply_text("❌ Could not load report.", reply_markup=OWNER_MENU)
+        return ConversationHandler.END
+
     title = f"Report — {start_str}" if start_str == end_str else f"Report — {start_str} to {end_str}"
-    msg = await update.message.reply_text(
+    msg = await query.message.reply_text(
         _format_report(report, title),
         parse_mode="HTML",
         reply_markup=OWNER_MENU,
@@ -775,8 +808,8 @@ def main():
     report_conv = ConversationHandler(
         entry_points=[MessageHandler(filters.Regex("^📊 Daily Report$"), report_handler)],
         states={
-            REPORT_DATE:  [CallbackQueryHandler(report_choose, pattern="^rep:")],
-            REPORT_INPUT: [MessageHandler(filters.TEXT & ~filters.COMMAND, report_date_input)],
+            REPORT_DATE:  [CallbackQueryHandler(report_cal_start, pattern="^cal:")],
+            REPORT_INPUT: [CallbackQueryHandler(report_cal_end,   pattern="^cal:")],
         },
         fallbacks=shared_fallbacks,
         persistent=True,
